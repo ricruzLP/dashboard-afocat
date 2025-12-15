@@ -163,44 +163,128 @@ if vista_actual == "📊 Dashboard Histórico":
 
     st.markdown("---")
 
-    col_mapa, col_top = st.columns([1.5, 1]) 
+    col_mapa, col_top = st.columns([1, 1])
 
     with col_mapa:
-        st.subheader("🗺️ Mapa de Riesgo")
+        st.subheader("🗺️ Probabilidad de accidentes por región (Distritos)")
+        
         if not df_filtrado.empty:
-            if 'Vía' not in df_filtrado.columns: df_filtrado['Vía'] = 'NO REGISTRADO'
-            
+            # 1. AGRUPACIÓN INTELIGENTE
+            # Agrupamos por Distrito para dejar de ver puntos aislados y ver "Zonas"
+            # Calculamos: 
+            # - Lat/Lon promedio (para centrar el círculo en el distrito)
+            # - Probabilidad promedio (para saber qué tan grave suele ser ahí)
+            # - Conteo (para saber cuántos siniestros hubo)
+            df_zona = df_filtrado.groupby(['Dist_Clean', 'Prov_Clean']).agg({
+                'latitud': 'mean',          # Centroide del distrito
+                'longitud': 'mean',         # Centroide del distrito
+                'probabilidad': 'mean',     # PROMEDIO de la probabilidad de gravedad
+                'Severidad': 'count'        # CANTIDAD de reportes
+            }).reset_index()
+
+            # Renombramos para el gráfico
+            df_zona.rename(columns={'Severidad': 'Cantidad_Siniestros', 'probabilidad': 'Riesgo_Promedio'}, inplace=True)
+
+            # 2. VISUALIZACIÓN POR ZONA
+            # Color = Qué tan peligroso es el promedio (Rojo = Alto riesgo, Verde = Bajo)
+            # Tamaño = Cantidad de siniestros (Más grande = Más accidentes)
             fig_mapa = px.scatter_mapbox(
-                df_filtrado,
-                lat="latitud", lon="longitud", color="Severidad", size="probabilidad",
-                hover_name="Distrito",
-                custom_data=["Prov", "probabilidad", "Vía"], 
-                color_discrete_map=mapa_colores_severidad,
-                zoom=4.5, height=500, mapbox_style="open-street-map"
+                df_zona,
+                lat="latitud", lon="longitud",
+                color="Riesgo_Promedio", 
+                size="Cantidad_Siniestros",
+                hover_name="Dist_Clean",
+                hover_data={"Prov_Clean": True, "latitud": False, "longitud": False},
+                
+                # Escala de colores: Verde (bajo riesgo) a Rojo (alto riesgo)
+                color_continuous_scale=px.colors.diverging.RdYlGn[::-1], 
+                
+                zoom=9,  # Zoom un poco más alejado para ver el panorama distrital
+                height=500,
+                mapbox_style="open-street-map"
             )
+            
+            # Ajustes visuales: Círculos más grandes para que parezca que "pintan" la zona
             fig_mapa.update_traces(
-                hovertemplate="<b>%{hovertext}</b><br>Provincia: %{customdata[0]}<br>Riesgo: %{customdata[1]}%<br>Vía: %{customdata[2]}<extra></extra>"
+                marker=dict(opacity=0.7, sizemin=10), # Transparencia para ver superposiciones
+                hovertemplate="<b>%{hovertext}</b><br>Provincia: %{customdata[0]}<br>🚨 Cantidad Siniestros: %{marker.size}<br>⚠️ Riesgo Promedio: %{marker.color:.1f}%<extra></extra>"
             )
-            fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            
+            fig_mapa.update_layout(
+                margin={"r":0,"t":0,"l":0,"b":0},
+                coloraxis_colorbar=dict(title="% Riesgo")
+            )
+            
             st.plotly_chart(fig_mapa, use_container_width=True)
+            
+            # --- TABLA RESUMEN OPCIONAL DEBAJO DEL MAPA ---
+# --- TABLA RESUMEN OPCIONAL DEBAJO DEL MAPA ---
+            with st.expander("Ver detalle de zonas críticas (Top 5)"):
+                # 1. Ordenamos y sacamos el Top 5
+                top_zonas = df_zona.sort_values(by=['Cantidad_Siniestros', 'Riesgo_Promedio'], ascending=False).head(5)
+                
+                # 2. Seleccionamos solo las columnas que nos importan
+                df_display = top_zonas[['Dist_Clean', 'Prov_Clean', 'Cantidad_Siniestros', 'Riesgo_Promedio']].copy()
+                
+                # 3. Formato de Porcentaje: Redondeo a 2 decimales + signo %
+                # Ejemplo: 56.0848 se convierte en "56.08%"
+                df_display['Riesgo_Promedio'] = df_display['Riesgo_Promedio'].apply(lambda x: f"{x:.2f}%")
+                
+                # 4. Renombramos los encabezados para que se vean profesionales
+                df_display.rename(columns={
+                    'Dist_Clean': 'Distrito',
+                    'Prov_Clean': 'Provincia',
+                    'Cantidad_Siniestros': 'Total Siniestros',
+                    'Riesgo_Promedio': 'Riesgo (%)'
+                }, inplace=True)
+                
+                # 5. Mostramos la tabla limpia
+                st.dataframe(df_display, hide_index=True, use_container_width=True)
+        
+        else:
+            st.warning("No hay datos para mostrar en el mapa con los filtros actuales.")
 
     with col_top:
-        st.subheader("🚗 Severidad por Vehículo")
-        if not df_filtrado.empty:
-            df_vehiculos = df_filtrado.groupby(['Vehículo', 'Severidad']).size().reset_index(name='Cantidad')
-            total_por_vehiculo = df_vehiculos.groupby('Vehículo')['Cantidad'].sum().sort_values(ascending=True)
-            orden_vehiculos = total_por_vehiculo.index.tolist()
+            st.subheader("📊 Probabilidad de accidentes por gravedad y departamento")
+            
+            if not df_filtrado.empty:
+                fig_stack = px.histogram(
+                    df_filtrado, 
+                    x="Dpto_Clean", 
+                    color="Severidad", 
+                    barnorm='percent',  # Calcula el % automáticamente
+                    color_discrete_map=mapa_colores_severidad,
+                    category_orders={"Severidad": ["FALLECIDO", "LESIONADO", "ILESO"]},
+                    # Limpiamos los nombres de los ejes para el gráfico base
+                    labels={"Dpto_Clean": "Departamento", "Severidad": "Condición"}
+                )
+                
+                fig_stack.update_layout(
+                    xaxis_title="Departamento",
+                    yaxis_title="Distribución (%)",
+                    legend_title="Condición",
+                    margin={"r":0,"t":30,"l":0,"b":0}
+                )
+                
+                # --- MAGIA DE ETIQUETAS ---
+                fig_stack.update_traces(
+                    texttemplate='%{y:.2f}%',
+                    textposition='inside',
+                    hovertemplate=(
+                        "<b>Departamento: %{x}</b><br>"
+                        "Condición: %{fullData.name}<br>"
+                        "Distribución: %{y:.2f}%<extra></extra>"
+                    )
+                )
 
-            fig_bar = px.bar(
-                df_vehiculos, x='Cantidad', y='Vehículo', color='Severidad', orientation='h',
-                text='Cantidad', category_orders={'Vehículo': orden_vehiculos},
-                color_discrete_map=mapa_colores_severidad,
-                labels={"Cantidad": "Siniestros", "Vehículo": ""}
-            )
-            fig_bar.update_traces(hovertemplate="<b>%{y}</b><br>%{legendgroup}: %{x}<extra></extra>")
-            st.plotly_chart(fig_bar, use_container_width=True)
+                
+                st.plotly_chart(fig_stack, use_container_width=True)
+                
+            else:
+                st.info("Sin datos para mostrar el desglose por departamento.")
 
-    col_uso, col_pie = st.columns([2, 1])
+    # Cambiamos [2, 1] por [1, 1] para dar espacio al nuevo gráfico
+    col_uso, col_pie = st.columns([1, 1])
     with col_uso:
         st.subheader("📦 Modalidad")
         if not df_filtrado.empty:
@@ -211,20 +295,97 @@ if vista_actual == "📊 Dashboard Histórico":
             st.plotly_chart(fig_tree, use_container_width=True)
 
     with col_pie:
-        st.subheader("👥 Género")
+        st.subheader("🚗 Probabilidad de accidentes por tipo de vehículo")
+        
+        if not df_filtrado.empty:
+            # Filtro opcional: Solo vehículos con datos
+            df_veh = df_filtrado[df_filtrado['Vehículo'].map(df_filtrado['Vehículo'].value_counts()) > 0]
+            
+            fig_veh = px.histogram(
+                df_veh, 
+                y="Vehículo",   # <--- CAMBIO CLAVE: Categorías en el eje Y
+                # x se calcula automáticamente (el porcentaje)
+                color="Severidad", 
+                barnorm='percent',
+                orientation='h', # <--- CAMBIO CLAVE: Orientación horizontal
+                hover_data=["Severidad"], 
+                color_discrete_map=mapa_colores_severidad,
+                category_orders={"Severidad": ["FALLECIDO", "LESIONADO", "ILESO"]},
+                labels={"Vehículo": "", "Severidad": "Condición"} # Quitamos la etiqueta del eje Y para ganar espacio
+            )
+            
+            fig_veh.update_layout(
+                xaxis_title="Distribución (%)", # El eje X ahora es el porcentaje
+                yaxis_title="",                 # El eje Y son los vehículos (ya se entiende por los nombres)
+                legend_title="Condición",
+                margin={"r":0,"t":30,"l":0,"b":0},
+                # Ordenamos el eje Y para que el vehículo con más siniestros totales salga arriba
+                yaxis={'categoryorder':'total descending'} 
+            )
+            
+            fig_veh.update_traces(
+                texttemplate='%{x:.2f}%',
+                textposition='inside',
+                hovertemplate=(
+                    "<b>Vehículo: %{y}</b><br>"
+                    "Condición: %{fullData.name}<br>"
+                    "Distribución: %{x:.2f}%<extra></extra>"
+                )
+            )
+
+            
+            st.plotly_chart(fig_veh, use_container_width=True)
+            
+        else:
+            st.info("No hay datos de vehículos para mostrar.")
+
+# --- NUEVA FILA: GÉNERO Y HORA (50% / 50%) ---
+    st.markdown("---") # Una línea separadora para ordenar visualmente
+    col_sexo, col_hora = st.columns([1, 1])
+
+    with col_sexo:
+        st.subheader("👥 Probabilidad de accidentes por género")
         if not df_filtrado.empty and 'SEXO' in df_filtrado.columns:
             conteo_sexo = df_filtrado['SEXO'].value_counts().reset_index()
             conteo_sexo.columns = ['Género', 'Cantidad']
-            fig_pie = px.pie(conteo_sexo, values='Cantidad', names='Género', hole=0.4, color_discrete_sequence=['#4682B4', '#CD5C5C'])
+            
+            fig_pie = px.pie(
+                conteo_sexo, 
+                values='Cantidad', 
+                names='Género', 
+                hole=0.4, 
+                color_discrete_sequence=['#4682B4', '#CD5C5C'] # Azul y Rojo suave
+            )
+            fig_pie.update_traces(
+                textinfo='percent+label',
+                hovertemplate="<b>%{label}</b><br>Cantidad: %{value}<extra></extra>"
+            )
             st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("Sin datos de género.")
 
-    st.subheader("⏰ Frecuencia por Hora")
-    if not df_filtrado.empty:
-        por_hora = df_filtrado.groupby('Hora').size().reset_index(name='Cantidad')
-        fig_hora = px.bar(por_hora, x='Hora', y='Cantidad')
-        fig_hora.update_traces(marker_color='#00CC96')
-        fig_hora.update_xaxes(tickmode='linear', dtick=1)
-        st.plotly_chart(fig_hora, use_container_width=True)
+    with col_hora:
+        st.subheader("⏰ Probabilidad de accidentes según la hora del día")
+        if not df_filtrado.empty:
+            por_hora = df_filtrado.groupby('Hora').size().reset_index(name='Cantidad')
+            
+            fig_hora = px.bar(
+                por_hora, 
+                x='Hora', 
+                y='Cantidad',
+                labels={'Hora': 'Hora del Día', 'Cantidad': 'N° Siniestros'}
+            )
+            fig_hora.update_traces(
+                marker_color='#00CC96',
+                hovertemplate="<b>%{x}:00 hrs</b><br>Siniestros: %{y}<extra></extra>"
+            )
+            fig_hora.update_layout(
+                xaxis=dict(tickmode='linear', dtick=1), # Muestra todas las horas
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            st.plotly_chart(fig_hora, use_container_width=True)
+        else:
+            st.info("Sin datos de hora.")
 
 
 # ==============================================================================
