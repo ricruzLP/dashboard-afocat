@@ -286,7 +286,7 @@ if vista_actual == "📊 Dashboard Histórico":
     # Cambiamos [2, 1] por [1, 1] para dar espacio al nuevo gráfico
     col_uso, col_pie = st.columns([1, 1])
     with col_uso:
-        st.subheader("📦 Modalidad")
+        st.subheader("📦 Probabilidad de accidentes según el tipo de vehículo")
         if not df_filtrado.empty:
             df_uso = df_filtrado['Modalidad'].value_counts().reset_index()
             df_uso.columns = ['Modalidad', 'Cantidad']
@@ -295,7 +295,7 @@ if vista_actual == "📊 Dashboard Histórico":
             st.plotly_chart(fig_tree, use_container_width=True)
 
     with col_pie:
-        st.subheader("🚗 Probabilidad de accidentes por tipo de vehículo")
+        st.subheader("🚗 Probabilidad de accidentes según su gravedad y el tipo de vehículo")
         
         if not df_filtrado.empty:
             # Filtro opcional: Solo vehículos con datos
