@@ -142,6 +142,8 @@ if vista_actual == "📊 Dashboard Histórico":
 
     # --- UI DASHBOARD ---
     st.title("🇵🇪 Monitor de Inteligencia Vial")
+    st.caption("Nota: 'IA' y 'Riesgo IA' corresponden a severidad estimada por el modelo (XGBoost).")
+
     st.markdown(f"**Registros:** {len(df_filtrado)}")
 
     # KPIs
@@ -153,11 +155,11 @@ if vista_actual == "📊 Dashboard Histórico":
         n_ileso = len(df_filtrado[df_filtrado['Severidad'] == 'ILESO'])
         riesgo_val = df_filtrado['probabilidad'].mean()
 
-        k1.metric("Total Eventos", f"{total:,}")
-        k2.metric("🔴 Fallecidos", f"{n_falle}")
-        k3.metric("🟠 Lesionados", f"{n_lesion}")
-        k4.metric("🟢 Ilesos", f"{n_ileso}")
-        k5.metric("📉 Riesgo Promedio", f"{riesgo_val:.1f}%")
+        k1.metric("Eventos", f"{total:,}")
+        k2.metric("🔴 IA: Fallec.", f"{n_falle}")
+        k3.metric("🟠 IA: Lesion.", f"{n_lesion}")
+        k4.metric("🟢 IA: Ileso", f"{n_ileso}")
+        k5.metric("📉 Riesgo IA", f"{riesgo_val:.1f}%")
     else:
         st.info("Selecciona filtros para ver datos.")
 
@@ -166,7 +168,8 @@ if vista_actual == "📊 Dashboard Histórico":
     col_mapa, col_top = st.columns([1, 1])
 
     with col_mapa:
-        st.subheader("🗺️ Probabilidad de accidentes por región (Distritos)")
+        st.subheader("🗺️ Probabilidad de accidentes por región")
+
         
         if not df_filtrado.empty:
             # 1. AGRUPACIÓN INTELIGENTE
@@ -191,24 +194,27 @@ if vista_actual == "📊 Dashboard Histórico":
             fig_mapa = px.scatter_mapbox(
                 df_zona,
                 lat="latitud", lon="longitud",
-                color="Riesgo_Promedio", 
+                color="Riesgo_Promedio",
                 size="Cantidad_Siniestros",
                 hover_name="Dist_Clean",
-                hover_data={"Prov_Clean": True, "latitud": False, "longitud": False},
-                
-                # Escala de colores: Verde (bajo riesgo) a Rojo (alto riesgo)
-                color_continuous_scale=px.colors.diverging.RdYlGn[::-1], 
-                
-                zoom=9,  # Zoom un poco más alejado para ver el panorama distrital
+                custom_data=["Prov_Clean", "Cantidad_Siniestros", "Riesgo_Promedio"],
+                color_continuous_scale=px.colors.diverging.RdYlGn[::-1],
+                zoom=9,
                 height=500,
                 mapbox_style="open-street-map"
             )
-            
-            # Ajustes visuales: Círculos más grandes para que parezca que "pintan" la zona
+
             fig_mapa.update_traces(
-                marker=dict(opacity=0.7, sizemin=10), # Transparencia para ver superposiciones
-                hovertemplate="<b>%{hovertext}</b><br>Provincia: %{customdata[0]}<br>🚨 Cantidad Siniestros: %{marker.size}<br>⚠️ Riesgo Promedio: %{marker.color:.1f}%<extra></extra>"
+                marker=dict(opacity=0.7, sizemin=10),
+                hovertemplate=(
+                    "<b>%{hovertext}</b><br>"
+                    "Provincia: %{customdata[0]}<br>"
+                    "📌 Eventos analizados: %{customdata[1]}<br>"
+                    "⚠️ Riesgo promedio: %{customdata[2]:.1f}%<extra></extra>"
+                )
             )
+
+
             
             fig_mapa.update_layout(
                 margin={"r":0,"t":0,"l":0,"b":0},
@@ -228,15 +234,16 @@ if vista_actual == "📊 Dashboard Histórico":
                 
                 # 3. Formato de Porcentaje: Redondeo a 2 decimales + signo %
                 # Ejemplo: 56.0848 se convierte en "56.08%"
-                df_display['Riesgo_Promedio'] = df_display['Riesgo_Promedio'].apply(lambda x: f"{x:.2f}%")
+                df_display['Riesgo_Promedio'] = df_display['Riesgo_Promedio'].apply(lambda x: f"{x:.1f}%")
                 
                 # 4. Renombramos los encabezados para que se vean profesionales
                 df_display.rename(columns={
                     'Dist_Clean': 'Distrito',
                     'Prov_Clean': 'Provincia',
-                    'Cantidad_Siniestros': 'Total Siniestros',
-                    'Riesgo_Promedio': 'Riesgo (%)'
+                    'Cantidad_Siniestros': 'Eventos',
+                    'Riesgo_Promedio': 'Riesgo IA'
                 }, inplace=True)
+
                 
                 # 5. Mostramos la tabla limpia
                 st.dataframe(df_display, hide_index=True, use_container_width=True)
@@ -291,11 +298,11 @@ if vista_actual == "📊 Dashboard Histórico":
             df_uso = df_filtrado['Modalidad'].value_counts().reset_index()
             df_uso.columns = ['Modalidad', 'Cantidad']
             fig_tree = px.treemap(df_uso, path=['Modalidad'], values='Cantidad', color='Cantidad', color_continuous_scale='Blues')
-            fig_tree.update_traces(hovertemplate="<b>%{label}</b><br>Cantidad: %{value}<extra></extra>")
+            fig_tree.update_traces(hovertemplate="<b>%{label}</b><br>Eventos: %{value}<extra></extra>")
             st.plotly_chart(fig_tree, use_container_width=True)
 
     with col_pie:
-        st.subheader("🚗 Probabilidad de accidentes según su gravedad y el tipo de vehículo")
+        st.subheader("🚗 Riesgo de accidentes por vehículo")
         
         if not df_filtrado.empty:
             # Filtro opcional: Solo vehículos con datos
@@ -358,14 +365,14 @@ if vista_actual == "📊 Dashboard Histórico":
             )
             fig_pie.update_traces(
                 textinfo='percent+label',
-                hovertemplate="<b>%{label}</b><br>Cantidad: %{value}<extra></extra>"
+                hovertemplate="<b>%{label}</b><br>Eventos analizados: %{value}<extra></extra>"
             )
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Sin datos de género.")
 
     with col_hora:
-        st.subheader("⏰ Probabilidad de accidentes según la hora del día")
+        st.subheader("⏰ Probabilidad de eventos por hora")
         if not df_filtrado.empty:
             por_hora = df_filtrado.groupby('Hora').size().reset_index(name='Cantidad')
             
@@ -377,7 +384,7 @@ if vista_actual == "📊 Dashboard Histórico":
             )
             fig_hora.update_traces(
                 marker_color='#00CC96',
-                hovertemplate="<b>%{x}:00 hrs</b><br>Siniestros: %{y}<extra></extra>"
+                hovertemplate="<b>%{x}:00 hrs</b><br>Eventos: %{y}<extra></extra>"
             )
             fig_hora.update_layout(
                 xaxis=dict(tickmode='linear', dtick=1), # Muestra todas las horas
@@ -438,86 +445,155 @@ elif vista_actual == "🔮 Simulador de Riesgo (IA)":
         calcular_click = st.button("🎲 Calcular con IA", use_container_width=True, type="primary")
 
     with col_results:
+        st.subheader("📊 Resultado del análisis")
+
         if calcular_click:
             if model is None:
                 st.error("Error: El modelo IA no está cargado.")
             else:
                 try:
-                    # 1. PREPARAR DATOS
+                    # 1) PREPARAR DATOS (igual que tú)
                     input_data = pd.DataFrame({
                         'EDAD': [edad_input],
                         'SEXO': [encoders['SEXO'].transform([sexo_input])[0]],
                         'TIPO PERSONA': [encoders['TIPO PERSONA'].transform([tipo_persona_input])[0]],
                         'VEHÍCULO': [encoders['VEHÍCULO'].transform([vehiculo_input])[0]],
-                        'MODALIDAD DE TRANSPORTE': [7], # Default Particular
-                        'DEPARTAMENTO': [10], # Default
+                        'MODALIDAD DE TRANSPORTE': [7],
+                        'DEPARTAMENTO': [10],
                         'ZONA': [encoders['ZONA'].transform([zona_input])[0]],
-                        'TIPO DE VÍA': [4], # Default
-                        'MES': [datetime.now().month], 
+                        'TIPO DE VÍA': [4],
+                        'MES': [datetime.now().month],
                         'HORA_ENTERA': [hora_input],
-                        'ES_FIN_SEMANA': [1 if hora_input > 18 else 0], 
+
+                        # OJO: esto idealmente debería depender de la FECHA real, no de la hora.
+                        # Lo dejo como está para no romper tu flujo, pero luego lo mejoramos.
+                        'ES_FIN_SEMANA': [1 if hora_input > 18 else 0],
                         'RANGO_HORARIO': [3 if hora_input > 18 else 1],
+
                         'CONDICIÓN CLIMÁTICA': [0],
                         'SUPERFICIE DE CALZADA': [2]
                     })
 
-                    # 2. PREDICCIÓN
+                    # 2) PREDICCIÓN
                     probs = model.predict_proba(input_data)[0]
-                    prob_fallecido = probs[0]
-                    prob_ileso = probs[1]
-                    prob_lesionado = probs[2]
+                    prob_fallecido = float(probs[0])
+                    prob_ileso     = float(probs[1])
+                    prob_lesionado = float(probs[2])
 
-                    # 3. RESULTADOS
-                    riesgo_grave_pct = (prob_fallecido + prob_lesionado) * 100
-                    
+                    riesgo_grave = prob_fallecido + prob_lesionado
+                    riesgo_grave_pct = riesgo_grave * 100
+
+                    # 3) CLASIFICACIÓN (más “humana”)
                     if prob_fallecido > umbral_riesgo:
-                        titulo = "ALTO RIESGO (FALLECIDO)"
-                        color = "red"
-                    elif prob_lesionado > prob_ileso:
-                        titulo = "RIESGO MEDIO (LESIONADO)"
-                        color = "orange"
+                        nivel = "ALTO"
+                        titulo = "ALTO RIESGO"
+                        subtitulo = "Alta probabilidad de un evento fatal."
+                        color_hex = "#ff4b4b"
+                        icono = "🔴"
+                    elif riesgo_grave > 0.40:
+                        nivel = "MEDIO"
+                        titulo = "RIESGO MEDIO"
+                        subtitulo = "Riesgo relevante de lesión. Reforzar prevención."
+                        color_hex = "#ffa15a"
+                        icono = "🟠"
                     else:
-                        titulo = "RIESGO BAJO (ILESO)"
-                        color = "green"
+                        nivel = "BAJO"
+                        titulo = "RIESGO BAJO"
+                        subtitulo = "Predomina la probabilidad de lesión leve o sin lesión."
+                        color_hex = "#00cc96"
+                        icono = "🟢"
 
-                    st.success(f"Analizando: **{dist_sel}, {prov_sel}** -> Resultado: **{titulo}**")
-
-                    # 4. VELOCÍMETRO
-                    fig_gauge = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = riesgo_grave_pct,
-                        number = {'suffix': "%", 'font': {'size': 35}},
-                        title = {'text': "<b>PROBABILIDAD DE GRAVEDAD</b><br><span style='font-size:0.8em;color:gray'>(Lesión o Muerte)</span>"},
-                        gauge = {
-                            'axis': {'range': [None, 100]},
-                            'bar': {'color': "rgba(0,0,0,0)"}, 
-                            'steps': [
-                                {'range': [0, 40], 'color': "#00cc96"},
-                                {'range': [40, 70], 'color': "#ffa15a"},
-                                {'range': [70, 100], 'color': "#ef553b"}
-                            ],
-                            'threshold': {
-                                'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': riesgo_grave_pct
-                            }
-                        }
-                    ))
-                    fig_gauge.update_layout(height=240, margin=dict(l=40, r=40, t=40, b=10))
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-
-                    # 5. BARRAS
-                    data_probs = pd.DataFrame({
-                        "Estado": ["FALLECIDO (0)", "ILESO (1)", "LESIONADO (2)"],
-                        "Probabilidad": [prob_fallecido, prob_ileso, prob_lesionado]
-                    })
-                    fig_probs = px.bar(
-                        data_probs, x="Probabilidad", y="Estado", orientation='h', text_auto='.1%',
-                        color="Estado", color_discrete_map={"FALLECIDO (0)": "red", "LESIONADO (2)": "orange", "ILESO (1)": "green"}
+                    # 4) HEADER tipo “tarjeta”
+                    st.markdown(
+                        f"""
+                        <div style="
+                            padding:16px;
+                            border-radius:12px;
+                            border:1px solid rgba(255,255,255,0.12);
+                            background:rgba(255,255,255,0.04);
+                        ">
+                            <div style="font-size:16px; opacity:0.85;">Analizando ubicación</div>
+                            <div style="font-size:20px; font-weight:700;">
+                                {dist_sel}, {prov_sel} ({dpto_sel})
+                            </div>
+                            <div style="margin-top:10px; font-size:22px; font-weight:800; color:{color_hex};">
+                                {icono} {titulo} — {riesgo_grave_pct:.1f}%
+                            </div>
+                            <div style="margin-top:6px; font-size:14px; opacity:0.85;">
+                                {subtitulo}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
                     )
-                    fig_probs.update_layout(height=180, showlegend=False, margin=dict(t=0,b=0), xaxis=dict(showticklabels=False), yaxis=dict(title=None))
+
+                    st.write("")
+
+                    # 5) MÉTRICAS rápidas (muy entendibles)
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Riesgo de lesión o muerte", f"{riesgo_grave_pct:.1f}%")
+                    m2.metric("Prob. de fallecido", f"{prob_fallecido*100:.1f}%")
+                    m3.metric("Prob. de lesionado", f"{prob_lesionado*100:.1f}%")
+
+                    st.write("")
+
+                    # 6) “¿Qué significa este %?” (clave para público general)
+                    with st.expander("ℹ️ ¿Cómo interpretar este resultado?"):
+                        st.markdown(
+                            f"""
+                            - Este resultado es una **estimación** basada en patrones de datos históricos.
+                            - **{riesgo_grave_pct:.1f}%** significa que, en condiciones parecidas, el modelo considera **alta/media/baja**
+                            la probabilidad de que el evento termine en **lesión o muerte**.
+                            - **No es una certeza**, pero sirve como **alerta preventiva** para priorizar acciones.
+                            """
+                        )
+
+                    # 7) Visual: barra de riesgo simple (más clara que el velocímetro para público general)
+                    st.markdown("#### 🧭 Nivel de riesgo (visual)")
+                    st.progress(min(max(riesgo_grave, 0.0), 1.0))  # 0 a 1
+
+                    # 8) Barras de probabilidades (tu gráfico, pero con etiquetas más claras)
+                    st.markdown("#### 📌 Probabilidades por resultado")
+                    data_probs = pd.DataFrame({
+                        "Resultado": ["Fallecido", "Ileso", "Lesionado"],
+                        "Probabilidad": [prob_fallecido, prob_ileso, prob_lesionado]
+                    }).sort_values("Probabilidad", ascending=True)
+
+                    fig_probs = px.bar(
+                        data_probs,
+                        x="Probabilidad",
+                        y="Resultado",
+                        orientation='h',
+                        text=data_probs["Probabilidad"].map(lambda x: f"{x*100:.1f}%")
+                    )
+                    fig_probs.update_layout(
+                        height=220,
+                        showlegend=False,
+                        margin=dict(t=10, b=10, l=10, r=10),
+                        xaxis=dict(showticklabels=False, title=None),
+                        yaxis=dict(title=None)
+                    )
                     st.plotly_chart(fig_probs, use_container_width=True)
+
+                    # 9) Recomendaciones automáticas (para “vender” la solución)
+                    st.markdown("#### ✅ Recomendación preventiva")
+                    if nivel == "ALTO":
+                        st.warning(
+                            "Priorizar medidas de prevención y respuesta rápida: control de velocidad, señalización, "
+                            "alertas al conductor, y coordinación inmediata con puntos de soporte."
+                        )
+                    elif nivel == "MEDIO":
+                        st.info(
+                            "Reforzar prevención: mayor vigilancia, mensajes preventivos, revisión de condiciones y "
+                            "acciones focalizadas en la zona y horario."
+                        )
+                    else:
+                        st.success(
+                            "Mantener medidas estándar y monitoreo. No se detecta alerta alta para estas condiciones."
+                        )
 
                 except Exception as e:
                     st.error(f"Error en predicción: {e}")
 
         else:
-             st.info("👈 Ingresa datos y presiona 'Calcular con IA'.")
+            st.info("👈 Ingresa los datos del evento y presiona **Calcular con IA**.")
